@@ -1,3 +1,4 @@
+"use client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -7,10 +8,10 @@ import {
   List,
   Check,
   CalendarOff,
-  SquarePen,
   Trash,
   ListCheck,
   Sigma,
+  LoaderCircle,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -23,21 +24,136 @@ import {
   AlertDialogFooter,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
+
+import EditTask from "@/components/edit-task";
+
+import { getTasks } from "@/actions/get-tasks-from-db";
+import { useEffect, useState } from "react";
+import { Tasks } from "@/generated/prisma";
+import { NewTask } from "@/actions/add-task";
+import { deleteTask } from "@/actions/delete-task";
+import { toast } from "sonner";
+import { upadateTaskStatus } from "@/actions/toggle-done";
+
 const Home = () => {
+  const [taskList, setTaskList] = useState<Tasks[]>([]);
+  const [task, setTask] = useState<string>("");
+  // console.log(taskList);
+  // efeito loading no botão.
+  const [loading, setLoading] = useState<boolean>(false);
+  {
+    /* Função busca informação no banco de dados*/
+  }
+  const handleGetTasks = async () => {
+    try {
+      const tasks = await getTasks();
+
+      if (!tasks) return;
+
+      setTaskList(tasks);
+    } catch (error) {
+      throw error;
+    }
+  };
+
+  //funçao para adicionar tarefa na tabela
+  const handleAddTask = async () => {
+    setLoading(true);
+    try {
+      if (task.length === 0 || !task) {
+        toast.error("Digite uma tarefa");
+        return;
+      }
+      //Add tasks
+      const myNewTask = await NewTask(task);
+
+      if (!myNewTask) return;
+
+      setTask("");
+
+      //atualizar a tabela
+      await handleGetTasks();
+
+      toast.success("Tarefa adicionada com sucesso");
+    } catch (error) {
+      throw error;
+    }
+  };
+
+  //Funão para deletar uma tarefa
+  const handleDeleteTask = async (id: string) => {
+    try {
+      if (!id) return;
+
+      const deletedTask = await deleteTask(id);
+
+      if (!deletedTask) return;
+
+      console.log(deleteTask);
+      //atualizar a tabela
+      //adicionar Sonner shadcn
+      await handleGetTasks();
+      toast.warning("Tarefa deletada com sucesso");
+    } catch (error) {
+      throw error;
+    }
+  };
+
+  //função para alterar estado/cor da tarefa concluida ou nao concluida
+
+  const handleToggleTask = async (taskId: string) => {
+    //clonar o array criar um preview para nao afetar o original caso precise voltar
+    const previousTask = [...taskList];
+    console.log(previousTask);
+
+    // função para atualizar o estado da tarefa
+    try {
+      setTaskList((prev) => {
+        const updateTaskList = prev.map((task) => {
+          if (task.id === taskId) {
+            return {
+              ...task,
+              done: !task.done,
+            };
+          } else {
+            return task;
+          }
+        });
+
+        return updateTaskList;
+      });
+
+      //atualizar o banco de dados
+      // await upadateTaskStatus(taskId);
+      await upadateTaskStatus(taskId);
+    } catch (error) {
+      setTaskList(previousTask);
+      throw error;
+    }
+  };
+
+  //Função para pegar tarefa e passar para o componente de edição
+
+  useEffect(() => {
+    handleGetTasks();
+  }, []);
+
   return (
     <main className="w-full h-screen bg-gray-300 flex justify-center items-center">
       <Card className="w-lg">
         <CardHeader className="flex gap-2">
-          <Input placeholder="Adicionar tarefa" />
-          <Button variant="default" className="cursor-pointer">
-            <Plus />
+          {/*Limpar o imput ao adicionar uma tarefa */}
+          <Input
+            placeholder="Adicionar tarefa"
+            onChange={(e) => setTask(e.target.value)}
+            value={task}
+          />
+          <Button
+            variant="default"
+            className="cursor-pointer"
+            onClick={handleAddTask}
+          >
+            {loading ? <LoaderCircle className="animate-spin" /> : <Plus />}
             Cadastrar
           </Button>
         </CardHeader>
@@ -60,32 +176,40 @@ const Home = () => {
             </Badge>
           </div>
 
-          <div className="mt-4 border-b-1">
-            <div className=" h-14 flex justify-between items center  border-t-1">
-              <div className="w-1 h-full bg-green-300"></div>
-              <p className="flex-1 px-2 text-sm">Estudar React</p>
-
+          {/* criando laço de repetição / map*/}
+          {taskList.map((task) => (
+            <div
+              className=" h-14 flex justify-between items center  border-t-1"
+              key={task.id}
+            >
+              {/* configurando a cor da tarefa*/}
+              <div
+                className={`${
+                  task.done ? " bg-green-300" : " bg-red-400"
+                } w-1 h-full`}
+              ></div>
+              {/* atualiza nome da atividade*/}
+              <p
+                className="flex-1 px-2 text-sm cursor-pointer hover:text-gray-700"
+                onClick={() => handleToggleTask(task.id)}
+              >
+                {task.task}
+              </p>
               <div className="flex items-center gap-2">
-                <Dialog>
-                  <DialogTrigger asChild>
-                    <SquarePen size={16} className="cursor-pointer" />
-                  </DialogTrigger>
-                  <DialogContent>
-                    <DialogHeader>
-                      <DialogTitle>Editar tarefas</DialogTitle>
-                    </DialogHeader>
-
-                    <div className="flex gap-2">
-                      <Input placeholder="Editar tarefa" />
-                      <Button className="cursor-pointer">Editar</Button>
-                    </div>
-                  </DialogContent>
-                </Dialog>
-
-                <Trash size={16} className="cursor-pointer" />
+                {/* editar tarefa*/}
+                {/* enviar props para o componente*/}
+                <EditTask task={task} handleGetTasks={handleGetTasks} />
+                {/* deletar tarefa*/}
+                <Trash
+                  size={16}
+                  className="cursor-pointer"
+                  onClick={() => handleDeleteTask(task.id)}
+                />
               </div>
             </div>
-          </div>
+          ))}
+
+          <div className="mt-4 border-b-1"></div>
 
           <div className="flex justify-between mt-4">
             <div className="flex items-center gap-2">
